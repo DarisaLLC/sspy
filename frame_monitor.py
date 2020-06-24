@@ -6,7 +6,7 @@ import cv2
 import matplotlib.pyplot as plt
 import numpy as np
 
-import pwiser
+import pwise
 
 
 # returns r^^2
@@ -21,15 +21,15 @@ if __name__ == '__main__':
 
     src_dir = sys.argv[1]
     assert(Path(src_dir).is_dir())
-    p = Path(src_dir).glob('*.png')
+    p = Path(src_dir).glob('*.jpg')
     files = [x for x in p if x.is_file()]
-    files.sort(key=lambda f: int(str(f.name).strip('frame').split('.')[0]))
+    files.sort(key=lambda f: int(str(f.name).strip('image').split('.')[0]))
     fItr = iter(files)
-    q_size = 3
+    q_size = len(files)
     buffer = []
     # create a pw unitary array
     # it sets the diagonal
-    ssm = pwiser.getPairWiseArray((q_size,q_size))
+    ssm = pwise.getPairWiseArray((q_size,q_size))
 
     title = Path(src_dir).name
     cv2.namedWindow(title, cv2.WINDOW_NORMAL)
@@ -70,41 +70,45 @@ if __name__ == '__main__':
     for rr in range(q_size):
         for cc in range(rr+1, q_size):
             r = ncv(rb[rr],rb[cc])
-            pwiser.setPairWiseArrayPair(ssm, rr, cc, r)
+            pwise.setPairWiseArrayPair(ssm, rr, cc, r)
 
-    ss = pwiser.getSelfSimilarity(ssm)
-    sotime = []
-    sotime.append(np.median(ss))
+    ss = pwise.getSelfSimilarity(ssm)
+    if q_size == len(files):
+        plt.plot(1.0 - ss[0,:])
+        plt.show()
+    else:
+        sotime = []
+        sotime.append(np.median(ss))
 
-    '''
-    On New Frame:
-    queue append frame   
-    queue popleft   oldest old new
-    corr new against the rest and set 0, ....
-    roll the ss matrix
-    get similarity
-    
-    '''
+        '''
+        On New Frame:
+        queue append frame   
+        queue popleft   oldest old new
+        corr new against the rest and set 0, ....
+        roll the ss matrix
+        get similarity
+        
+        '''
 
-    while (True):
-        file = getNextFile(fItr)
-        exitIfNone(file)
-        frame = cv2.imread(file, -1)
-        if frame is None: break
-        ## put in FIFO
-        rb.append(frame)
-        rb.popleft()
-        for ff in range(q_size - 1):
-            r = ncv(frame, rb[ff])
-            pwiser.setPairWiseArrayPair(ssm, 0, ff + 1, r)
-        np.roll(ssm, (q_size - 1) * q_size)
-        ss = pwiser.getSelfSimilarity(ssm)
-        ssv = np.median(ss)
-        print((ssv))
-        sotime.append(ssv)
-        plt.pause(0.1)
-        cv2.imshow(title, frame)
-        cv2.waitKey(1)
+        while (True):
+            file = getNextFile(fItr)
+            exitIfNone(file)
+            frame = cv2.imread(file, -1)
+            if frame is None: break
+            ## put in FIFO
+            rb.append(frame)
+            rb.popleft()
+            for ff in range(q_size - 1):
+                r = ncv(frame, rb[ff])
+                pwise.setPairWiseArrayPair(ssm, 0, ff + 1, r)
+            np.roll(ssm, (q_size - 1) * q_size)
+            ss = pwise.getSelfSimilarity(ssm)
+            ssv = np.median(ss)
+            print((ssv))
+            sotime.append(ssv)
+            plt.pause(0.1)
+            cv2.imshow(title, frame)
+            cv2.waitKey(1)
 
-    plt.plot(sotime)
-    plt.show()
+        plt.plot(sotime)
+        plt.show()
