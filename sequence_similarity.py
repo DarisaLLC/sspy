@@ -83,7 +83,7 @@ def compute_selfsimilarity(content_path, q_size=-1, content_prefix='image', cont
     ss = 1.0 - pwise.getSelfSimilarity(ssm)
     # if duration was shorter than entire length, compute the median. Wasted if duration is all
     sotime = []
-    sotime.append(1.0 - np.median(ss))
+    sotime.append(np.median(ss))
 
     '''
     On New Frame: queue append frame, queue popleft   oldest old new, corr new against the rest and set, roll
