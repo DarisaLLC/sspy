@@ -8,7 +8,7 @@ from collections import deque
 import numpy as np
 import pwise
 from skimage import io
-
+import tifffile as tf
 
 
 ## Computes normalized correlation^^2
@@ -22,28 +22,45 @@ def correlation_coefficient(image_a, image_b):
         return product
 
 
-def compute_selfsimilarity(content_path, q_size=-1, content_prefix='image', content_format='*.jpg', do_show = False):
+def compute_selfsimilarity(content_path, q_size=-1, content_prefix='image', content_format='*.jpg', multi_tif = False, do_show = False):
 
-    src_dir = content_path
-    assert (Path(src_dir).is_dir())
-    p = Path(src_dir).glob(content_format)
-    files = [x for x in p if x.is_file()]
-    files.sort(key=lambda f: int(str(f.name).strip(content_prefix).split('.')[0]))
-    fItr = iter(files)
+    source = content_path
+    total_count = -1
+    # handle directory of image files or a multi image tif file
+    if multi_tif == False:
+        assert (Path(source).is_dir())
+        p = Path(source).glob(content_format)
+        files = [x for x in p if x.is_file()]
+        files.sort(key=lambda f: int(str(f.name).strip(content_prefix).split('.')[0]))
+        total_count = len(files)
+    else: # is multi image tiff file
+        assert(Path(source).is_file())
+        mtif = tf.imread(source)
+        assert(len(mtif.shape) == 3)
+        total_count = mtif.shape[0]
+
+    fItr = iter(range(total_count))
+
     buffer = []
-    if q_size == -1: q_size=len(files)
-    else: q_size = q_size % len(files)
+    if q_size == -1: q_size=total_count
+    else: q_size = q_size % total_count
     # create a pw unitary array
     # it sets the diagonal
     ssm = pwise.getPairWiseArray((q_size, q_size))
-    title = Path(src_dir).name
+    title = Path(source).name
 
-    def getNextFile(iterator):
+    def is_tiff(): return multi_tif
+
+    def getNextImage(iterator):
         item = next(iterator, None)
         if item is None: return None
-        if not Path(item).is_file():
-            return None
-        return str(item)
+        if is_tiff():
+            return mtif[item]
+        else:
+            if not Path(files[item]).is_file():
+                return None
+            return io.imread (str(files[item]))
+        assert(True) ## should not reach here
 
     def plotAndShow(ssm_, ss_, do_show):
         if not do_show: return
@@ -67,9 +84,9 @@ def compute_selfsimilarity(content_path, q_size=-1, content_prefix='image', cont
         plt.show()
 
     for pf in range(q_size):
-        file = getNextFile(fItr)
-        if file is None: break
-        buffer.append(io.imread(file))
+        image = getNextImage(fItr)
+        if image is None: break
+        buffer.append(image)
 
     # create a deque for frame grabbing
     rb = deque(buffer)
@@ -89,9 +106,7 @@ def compute_selfsimilarity(content_path, q_size=-1, content_prefix='image', cont
     On New Frame: queue append frame, queue popleft   oldest old new, corr new against the rest and set, roll
     '''
     while (True):
-        file = getNextFile(fItr)
-        if file is None: break
-        frame = io.imread(file)
+        frame = getNextImage(fItr)
         if frame is None: break
         ## put in FIFO
         rb.append(frame)
@@ -104,14 +119,14 @@ def compute_selfsimilarity(content_path, q_size=-1, content_prefix='image', cont
         ssv = np.median(ss)
         sotime.append(1.0 - ssv)
 
-    if(q_size == len(files)):sotime = ss[0,:]
+    if(q_size == total_count):sotime = ss[0,:]
     plotAndShow(ssm, sotime, do_show)
     return (ssm,sotime)
 
 def main():
     parser = argparse.ArgumentParser(description='SelfSimilarator')
     parser.add_argument('--content', '-i', required=True,
-                        help='Image Directory of sequentially numbered image files')
+                        help='Directory of sequentially numbered image files or TIF multipage file')
     parser.add_argument('--outpath', '-o', required=False, help='Path of output dir')
     parser.add_argument('--duration', '-d', type=int,required=True, help='Moving Temporal Window Size or -1 For All')
     parser.add_argument('--show', '-s', type=bool)
@@ -121,8 +136,18 @@ def main():
     args = parser.parse_args()
     content_path = None
     output_path = None
+    multi_image_tif = False
     if Path(args.content).exists() and Path(args.content).is_dir():
         content_path = args.content
+    elif Path(args.content).exists() and Path(args.content).is_file():
+        is_tif = Path(args.content).suffix == ('.' + args.type)
+        if is_tif:
+            with tf.TiffFile(args.content) as tif:
+                data = tif.asarray()
+                if len(data.shape) == 3:
+                    content_path = args.content
+                    multi_image_tif = True
+
     if (content_path is None):
         str_format = " Error: Content Path %s is not valid "
         print(str_format % (content_path))
@@ -135,7 +160,7 @@ def main():
     content_glob = '*.' + args.type
     q_size = args.duration
     q_size_text = str(q_size) if q_size >= 0 else 'all'
-    results = compute_selfsimilarity(content_path, q_size, args.prefix,content_glob, args.show)
+    results = compute_selfsimilarity(content_path, q_size, args.prefix,content_glob, multi_image_tif, args.show)
     filename = Path(args.content).name
     ss_name = filename+ '_' + q_size_text + '_' + 'entropy' + '.csv'
     ssm_name = filename+ '_' +  q_size_text + '_' + 'map' + '.csv'
