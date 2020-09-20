@@ -93,24 +93,22 @@ def recompute_at_fraction(fraction, ranks, entropies, ss_map):
 
 
 
-def compute_selfsimilarity(content_path, q_size=-1, content_prefix='image', wild_dot_format='*.jpg', multi_tif = False, do_show = False):
-    
+'''
 
-    _is_multi_tif = multi_tif and format_is_tif(wild_dot_format)
-    source = content_path
-    total_count = -1
-    # handle directory of image files or a multi image tif file
-    if _is_multi_tif == False:
-        assert (Path(source).is_dir())
-        p = Path(source).glob(wild_dot_format)
-        files = [x for x in p if x.is_file()]
-        files.sort(key=lambda f: int(f.name.strip(content_prefix).split('.')[0]))
-        total_count = len(files)
-    else: # is multi image tiff file
-        assert(Path(source).is_file())
-        mtif = tf.imread(source)
-        assert(len(mtif.shape) > 2)
-        total_count = mtif.shape[0]
+Parameters:
+  inputs: files ( sorted according to sequence if applicable ) or images
+  q_size: duration in number of frames
+  is_file: True if inputs are files paths and False if the input is ndarrays of images
+  total_count: len of inputs
+  do_show: plot results
+
+returns:
+  1D self-similarity calculation 
+  2D self-similarity matrix
+'''
+
+def selfsimilarity(inputs, q_size, is_files, total_count, do_show):
+
 
     fItr = iter(range(total_count))
 
@@ -120,19 +118,18 @@ def compute_selfsimilarity(content_path, q_size=-1, content_prefix='image', wild
     # create a pw unitary array
     # it sets the diagonal
     ssm = pwise.getPairWiseArray((q_size, q_size))
-    title = Path(source).name
 
-    def is_tiff(): return _is_multi_tif
+    def is_tiff(): return not is_files
 
     def getNextImage(iterator):
         item = next(iterator, None)
         if item is None: return None
         if is_tiff():
-            return mtif[item]
+            return inputs[item]
         else:
-            if not Path(files[item]).is_file():
+            if not Path(inputs[item]).is_file():
                 return None
-            return io.imread (str(files[item]))
+            return io.imread (str(inputs[item]))
         assert(True) ## should not reach here
 
     def plotAndShow(ssm_, ss_, do_show):
@@ -197,6 +194,26 @@ def compute_selfsimilarity(content_path, q_size=-1, content_prefix='image', wild
     return (ssm,sotime)
 
 
+def compute_selfsimilarity(content_path, q_size=-1, content_prefix='image', wild_dot_format='*.jpg', multi_tif=False,
+                           do_show=False):
+    _is_multi_tif = multi_tif and format_is_tif(wild_dot_format)
+    source = content_path
+    total_count = -1
+    # handle directory of image files or a multi image tif file
+    if _is_multi_tif == False:
+        assert (Path(source).is_dir())
+        p = Path(source).glob(wild_dot_format)
+        files = [x for x in p if x.is_file()]
+        files.sort(key=lambda f: int(f.name.strip(content_prefix).split('.')[0]))
+        total_count = len(files)
+        if total_count < 1: return None
+        return selfsimilarity(files, q_size, True, total_count, do_show)
+    else:  # is multi image tiff file
+        assert (Path(source).is_file())
+        mtif = tf.imread(source)
+        assert (len(mtif.shape) > 2)
+        total_count = mtif.shape[0]
+        return selfsimilarity(mtif, q_size, False, total_count, do_show)
 
 
 

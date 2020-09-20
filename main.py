@@ -51,6 +51,10 @@ def main():
     q_size = args.duration
     q_size_text = str(q_size) if q_size >= 0 else 'all'
     results = compute_selfsimilarity(content_path, q_size, args.prefix,content_glob, multi_image_tif, args.show)
+    if results is None:
+        print('Input Error: Check ')
+        sys.exit(1)
+
     ss_np_array = np.array(results[1])
     ssm_np_array = np.array(results[0])
 
@@ -76,8 +80,8 @@ def main():
     if args.write and Path(output_path).is_dir():
         np.savetxt(ss_name, ss_np_array, fmt='%-1.10f', delimiter=',')
         np.savetxt(ssm_name, ssm_np_array, fmt='%-1.10f', delimiter=',')
-        if signal != []:
-            np.savetxt(levelset, signal, fmt='%-1.10f', delimiter=',')
+        if len(signal) == len(results[1]):
+            np.savetxt(levelset_name, signal, fmt='%-1.10f', delimiter=',')
 
 
 
