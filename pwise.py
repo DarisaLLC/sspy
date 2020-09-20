@@ -26,12 +26,14 @@ def setPairWiseArrayPair(data, row, col, p):
 
 def getSelfSimilarity(data):
     rows, cols = data.shape
-    sums = np.sum(data, axis=0)
     ss = np.zeros((1,cols), dtype=float)
     count_entropy = np.log2(rows)
+    # stats.entropy will normalize if row does not add up to 1
+    # we normalize ourseleves
     for row in range(rows):
-        rd = data[row,:]
-        ss[0,row] = scipy.stats.entropy(data[row,:], None, base=2) / count_entropy
+        pk = data[row,:]
+        pk = 1.0 * pk / np.sum(pk, axis=0, keepdims=True)
+        ss[0,row] = scipy.stats.entropy(pk, None, base=2) / count_entropy
     return ss
 
 
