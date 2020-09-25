@@ -9,9 +9,11 @@ import numpy as np
 import pwise
 from skimage import io
 import math
-
+from skimage.feature import register_translation
 import tifffile as tf
+import logging
 
+logging.basicConfig(filename='sspy.log', format='%(asctime)s %(message)s', level=logging.INFO)
 
 '''
 @todo:
@@ -21,6 +23,7 @@ import tifffile as tf
 4. Add channel select
 5. Add similarity function select
 '''
+
 
 # Normalized Correlation via cv2 or np.cov
 # returns r^^2
@@ -42,13 +45,21 @@ import tifffile as tf
 
 ## Computes normalized correlation^^2
 def correlation_coefficient(image_a, image_b):
+    # shift, error, diffphase = register_translation(image_a, image_b, space='real')
+    # diff = (image_a - image_a.mean()) - (image_b - image_b.mean())
+    # maxd = np.max(diff)
+    # error2 = np.sqrt(np.mean(diff ** 2)) / maxd
+
+
     product = np.mean((image_a - image_a.mean()) * (image_b - image_b.mean()))
     stds = image_a.std() * image_b.std()
     if stds == 0:
         return 0
     else:
         product /= stds
-        return (product+1.0)/2
+        product = product * product #error2 #(product+1.0)/2
+        if product > 1.0: product = 1.0
+        return product
 
     # Check if wild_dot_format and multi_tif do not match
 def format_is_tif(wild_dot_format):
@@ -96,10 +107,10 @@ def recompute_at_fraction(fraction, ranks, entropies, ss_map):
 '''
 
 Parameters:
-  inputs: files ( sorted according to sequence if applicable ) or images
+  inputs: files ( sorted according to sequence if applicable ) or images or voxels
+  content_type image_files, image_stack, voxel_stack 
   q_size: duration in number of frames
-  is_file: True if inputs are files paths and False if the input is ndarrays of images
-  total_count: len of inputs
+   
   do_show: plot results
 
 returns:
@@ -107,7 +118,19 @@ returns:
   2D self-similarity matrix
 '''
 
-def selfsimilarity(inputs, q_size, is_files, total_count, do_show):
+
+def selfsimilarity(inputs, is_file , q_size, total_count, use_voxels, do_show):
+    input_shape = inputs.shape
+    z = input_shape[2] if len(input_shape) == 3 else -1
+    x = input_shape[len(input_shape) -1]
+    y = input_shape[len(input_shape) -2]
+
+    logging.info('Input Shape: [%d,%d,%d] is_file %d q_size: %d, total count: %d ',
+                 x, y, z, is_file, q_size, total_count)
+
+
+    if is_file and use_voxels: return None
+    is_image = True if (not is_file) and (not use_voxels) else False
 
 
     fItr = iter(range(total_count))
@@ -119,17 +142,21 @@ def selfsimilarity(inputs, q_size, is_files, total_count, do_show):
     # it sets the diagonal
     ssm = pwise.getPairWiseArray((q_size, q_size))
 
-    def is_tiff(): return not is_files
+
 
     def getNextImage(iterator):
         item = next(iterator, None)
         if item is None: return None
-        if is_tiff():
-            return inputs[item]
-        else:
-            if not Path(inputs[item]).is_file():
-                return None
+
+        if is_file:
+            assert(Path(inputs[item]).is_file())
             return io.imread (str(inputs[item]))
+        elif is_image:
+            return inputs[item]
+        elif use_voxels:
+            uri = np.unravel_index(item, inputs.shape)
+            return inputs[:,uri[1],uri[2]]
+
         assert(True) ## should not reach here
 
     def plotAndShow(ssm_, ss_, do_show):
@@ -190,30 +217,35 @@ def selfsimilarity(inputs, q_size, is_files, total_count, do_show):
         sotime.append(1.0 - ssv)
 
     if(q_size == total_count):sotime = ss[0,:]
+    if use_voxels:
+        ishape = inputs.shape
+        print(ishape)
+        ssm = sotime.reshape(ishape[1], ishape[2])
     plotAndShow(ssm, sotime, do_show)
     return (ssm,sotime)
 
 
-def compute_selfsimilarity(content_path, q_size=-1, content_prefix='image', wild_dot_format='*.jpg', multi_tif=False,
-                           do_show=False):
-    _is_multi_tif = multi_tif and format_is_tif(wild_dot_format)
+def compute_selfsimilarity(content_path, q_size=-1, content_prefix='image', wild_dot_format='*.jpg',
+                           use_voxels =False,  do_show=False):
+
     source = content_path
     total_count = -1
-    # handle directory of image files or a multi image tif file
-    if _is_multi_tif == False:
-        assert (Path(source).is_dir())
+
+    # handle directory of image files of wild_dot_format or a multi image tif file
+    if Path(source).is_dir():
         p = Path(source).glob(wild_dot_format)
         files = [x for x in p if x.is_file()]
         files.sort(key=lambda f: int(f.name.strip(content_prefix).split('.')[0]))
         total_count = len(files)
-        if total_count < 1: return None
-        return selfsimilarity(files, q_size, True, total_count, do_show)
-    else:  # is multi image tiff file
-        assert (Path(source).is_file())
+        if total_count < 2: return None
+        return selfsimilarity(files, True, q_size, total_count, use_voxels, do_show)
+    elif Path(source).is_file():
         mtif = tf.imread(source)
-        assert (len(mtif.shape) > 2)
-        total_count = mtif.shape[0]
-        return selfsimilarity(mtif, q_size, False, total_count, do_show)
+        tif_shape = mtif.shape
+        if len(tif_shape) < 3 or tif_shape[2] < 2:
+            return None
+        total_count = mtif.shape[0] if use_voxels == False else mtif.shape[1] * mtif.shape[2]
+        return selfsimilarity(mtif, False, q_size, total_count, use_voxels, do_show)
 
 
 

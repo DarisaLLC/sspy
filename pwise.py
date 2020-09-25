@@ -5,6 +5,39 @@ import numpy as np
 import scipy
 from scipy.stats import entropy
 
+def gauss(sample_phi,phi,sample_psi,psi,sigma):
+    return np.exp((-1.0*((sample_phi-phi)**2 + (sample_psi-psi)**2))/(2.0*(sigma**2)))
+
+def ParzenWindow(w, h, d=1):
+    """""""""""""""""""""""
+    Average of the gaussian window functions centered on each data point of w for marginal or joint density
+    estimation at a particular point x
+    Parameters
+    ----------
+        w = vector of distances from a point x to the other points
+        h = window width
+        d = length or the variable dimension (1 by default if unit variable for marginal density and 2 if bivariate
+            variable for joint density.)
+    Returns
+    -------
+        pw = Estimation of the parzen window function for the density estimation f(w)
+    """""""""""""""""""""""
+    if d>1:
+        pw = np.sum(np.prod(GaussianWindow(list(w),h),1))
+    else: pw = np.sum(GaussianWindow(w,h))#np.sum(np.exp(-w**2/(2*phi))/den)
+    return pw
+
+def GaussianWindow(w,h):
+    """
+    Gaussian kernel function with a variance of 2h^2
+    :param w: vector of distances from a point x to the other points
+    :param h: Window width
+    :return: VAlue of the gaussian function
+    """
+    phi = 2*h**2
+    den = (2*np.pi*phi)**(1/2)
+    return den*np.exp(-np.power(w,2)/(2*phi))
+
 
 def getPairWiseArray(dims):
     _unity = 1.0
