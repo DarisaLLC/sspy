@@ -1,7 +1,5 @@
 # !/usr/bin/python3
-import argparse
-import sys
-import os
+import multiprocessing as mp
 import matplotlib.pyplot as plt
 from pathlib import Path
 from collections import deque
@@ -142,7 +140,7 @@ def selfsimilarity(inputs, is_file , q_size, total_count, use_voxels, do_show):
     # it sets the diagonal
     ssm = pwise.getPairWiseArray((q_size, q_size))
 
-
+    pool = mp.Pool(mp.cpu_count())
 
     def getNextImage(iterator):
         item = next(iterator, None)
@@ -191,7 +189,8 @@ def selfsimilarity(inputs, is_file , q_size, total_count, use_voxels, do_show):
     # fillup the ss with prefill comparisons
     for rr in range(q_size):
         for cc in range(rr + 1, q_size):
-            r = correlation_coefficient(rb[rr], rb[cc])
+            pr = [pool.apply(correlation_coefficient, args=( rb[rr], rb[cc]))]
+            r = pr[0]
             pwise.setPairWiseArrayPair(ssm, rr, cc, r)
     # if duration is all frame, we are done and it fall through.But computes the following median
     ss = 1.0 - pwise.getSelfSimilarity(ssm)
