@@ -96,7 +96,7 @@ def main():
             plt.show()
 
     if args.write:
-        writeout(args.content,q_size, output_path, signal)
+        writeout(args.content,q_size, output_path, results, signal)
 
 
 if __name__ == '__main__':
