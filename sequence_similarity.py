@@ -7,58 +7,20 @@ import numpy as np
 import pwise
 from skimage import io
 import math
-from skimage.feature import register_translation
 import tifffile as tf
 import logging
-from common import numeric_sorted_files, get_timestamp_from_exif
+from skimage import color
+
+from similarity_fns import information_variation, squared_ncv_cv2, squared_ncv_np, match_functions
 
 logging.basicConfig(filename='sspy.log', format='%(asctime)s %(message)s', level=logging.INFO)
 
 '''
 @todo:
-1. Add progress report
-2. Add parallel processing
-3. Add input range
-4. Add channel select
-5. Add similarity function select
+1. Add input range
 '''
 
 
-# Normalized Correlation via cv2 or np.cov
-# returns r^^2
-# def correlation_coefficient__(image_a, image_b, options=None):
-#     res = cv2.matchTemplate(img_as_float32(image_a), img_as_float32(image_b), cv2.TM_CCOEFF_NORMED)
-#     c = res[0][0]
-#     return c*c
-#
-#
-# # returns r^^2
-# def correlation_coefficient__(imagea, imageb, options=None):
-#     image_a = np.ravel(imagea)
-#     image_b = np.ravel(imageb)
-#     c = np.cov(image_a, image_b)
-#     d = np.sqrt(np.cov(image_a) * np.cov(image_b))
-#     e = c / d
-#     ee = e[0][1]
-#     return ee * ee
-
-## Computes normalized correlation^^2
-def correlation_coefficient(image_a, image_b):
-    # shift, error, diffphase = register_translation(image_a, image_b, space='real')
-    # diff = (image_a - image_a.mean()) - (image_b - image_b.mean())
-    # maxd = np.max(diff)
-    # error2 = np.sqrt(np.mean(diff ** 2)) / maxd
-
-
-    product = np.mean((image_a - image_a.mean()) * (image_b - image_b.mean()))
-    stds = image_a.std() * image_b.std()
-    if stds == 0:
-        return 0
-    else:
-        product /= stds
-        product = product * product #error2 #(product+1.0)/2
-        if product > 1.0: product = 1.0
-        return product
 
     # Check if wild_dot_format and multi_tif do not match
 def format_is_tif(wild_dot_format):
@@ -118,27 +80,30 @@ returns:
 '''
 
 
-def selfsimilarity(inputs, is_file , q_size, total_count, use_voxels, do_show):
-    input_shape = inputs.shape
-    z = input_shape[2] if len(input_shape) == 3 else -1
-    x = input_shape[len(input_shape) -1]
-    y = input_shape[len(input_shape) -2]
+def selfsimilarity(inputs, is_dir_of_files , q_size, total_count, use_voxels, do_show, channel, mfunc):
 
-    logging.info('Input Shape: [%d,%d,%d] is_file %d q_size: %d, total count: %d ',
-                 x, y, z, is_file, q_size, total_count)
+    if type(inputs) is list:
+        logging.info('is_dir_of_files: %r, use_voxel: %r, do_show: %r, channel: %d', is_dir_of_files, use_voxels,
+                     do_show, channel)
+    else:
+        input_shape = inputs.shape
+        z = input_shape[len(input_shape) -3] if len(input_shape) == 3 else -1
+        x = input_shape[len(input_shape) -1]
+        y = input_shape[len(input_shape) -2]
+        logging.info('Input Shape: [%d,%d,%d] is_file %d q_size: %d, total count: %d ',
+                 x, y, z, is_dir_of_files, q_size, total_count)
 
-
-    if is_file and use_voxels: return None
-    is_image = True if (not is_file) and (not use_voxels) else False
-
-
+    is_image = True if (not is_dir_of_files) and (not use_voxels) else False
     fItr = iter(range(total_count))
 
+    # create a buffer of samples.
+    # number of images or number of 2d pixels for voxel processing
     buffer = []
     if q_size == -1: q_size=total_count
     else: q_size = q_size % total_count
-    # create a pw unitary array
-    # it sets the diagonal
+    logging.info('Sample Count: %d, q_size: %d'%(total_count, q_size))
+
+    # create a pw unitary array it sets the diagonal
     ssm = pwise.getPairWiseArray((q_size, q_size))
 
     pool = mp.Pool(mp.cpu_count())
@@ -147,9 +112,19 @@ def selfsimilarity(inputs, is_file , q_size, total_count, use_voxels, do_show):
         item = next(iterator, None)
         if item is None: return None
 
-        if is_file:
+        if is_dir_of_files:
             assert(Path(inputs[item]).is_file())
-            return io.imread (str(inputs[item]))
+            logging.info('%s'%(str(inputs[item])))
+            if channel == -1: # return gray of color
+                return io.imread(str(inputs[item]), channel == -1)
+            image = io.imread(str(inputs[item]), channel == -1)
+            if image.ndim == 3:
+                return image[:, :, channel]
+            if image.ndim > 3:
+                rgb = color.rgba2rgb(image)
+                return rgb[:, :, channel]
+
+
         elif is_image:
             return inputs[item]
         elif use_voxels:
@@ -184,15 +159,23 @@ def selfsimilarity(inputs, is_file , q_size, total_count, use_voxels, do_show):
         if image is None: break
         buffer.append(image)
 
+
     # create a deque for frame grabbing
     rb = deque(buffer)
+    logging.info('Buffer Created Size: %d' % (len(buffer)))
+
+    # generate random boolean mask the length of data
+    # use p 0.75 for False and 0.25 for True
+    # mask = np.random.choice([False, True], q_size, p=[0.90,0.10])
 
     # fillup the ss with prefill comparisons
     for rr in range(q_size):
         for cc in range(rr + 1, q_size):
-            pr = [pool.apply(correlation_coefficient, args=( rb[rr], rb[cc]))]
+            pr = [pool.apply(mfunc, args=( rb[rr], rb[cc]))]
             r = pr[0]
-            pwise.setPairWiseArrayPair(ssm, rr, cc, r)
+            pwise.setPairWiseArrayPair(ssm, rr, cc, r[0],r[1])
+
+#        if (rr % (q_size//10)) == 0: logging.info(' Percent Done: %d'%(int(((rr*100.0)/q_size))))
     # if duration is all frame, we are done and it fall through.But computes the following median
     ss = 1.0 - pwise.getSelfSimilarity(ssm)
     # if duration was shorter than entire length, compute the median. Wasted if duration is all
@@ -204,13 +187,16 @@ def selfsimilarity(inputs, is_file , q_size, total_count, use_voxels, do_show):
     '''
     while (True):
         frame = getNextImage(fItr)
-        if frame is None: break
+        if frame is None:
+            logging.info("Done")
+            break
         ## put in FIFO
         rb.append(frame)
         rb.popleft()
         for ff in range(q_size - 1):
-            r = correlation_coefficient(frame, rb[ff])
-            pwise.setPairWiseArrayPair(ssm, 0, ff + 1, r)
+            pr = [pool.apply(mfunc, args=(frame, rb[ff]))]
+            r = pr[0]
+            pwise.setPairWiseArrayPair(ssm, 0, ff + 1, r[0],r[1])
         np.roll(ssm, (q_size - 1) * q_size)
         ss = pwise.getSelfSimilarity(ssm)
         ssv = np.median(ss)
@@ -225,11 +211,12 @@ def selfsimilarity(inputs, is_file , q_size, total_count, use_voxels, do_show):
     return (ssm,sotime)
 
 
-def compute_selfsimilarity(content_path, q_size=-1, content_prefix='image', wild_dot_format='*.jpg',
-                           use_voxels =False,  do_show=False):
+def compute_selfsimilarity(content_path, match_fn_index, q_size=-1, content_prefix='image', wild_dot_format='*.tif',
+                           use_voxels =False,  do_show=False, channel = -1):
 
     source = content_path
     total_count = -1
+    mfunc = match_functions[match_fn_index]
 
     # handle directory of image files of wild_dot_format or a multi image tif file
     if Path(source).is_dir():
@@ -238,14 +225,14 @@ def compute_selfsimilarity(content_path, q_size=-1, content_prefix='image', wild
         files.sort(key=lambda f: int(f.name.strip(content_prefix).split('.')[0]))
         total_count = len(files)
         if total_count < 2: return None
-        return selfsimilarity(files, True, q_size, total_count, use_voxels, do_show)
+        return selfsimilarity(files, True, q_size, total_count, use_voxels, do_show, channel, mfunc)
     elif Path(source).is_file():
         mtif = tf.imread(source)
         tif_shape = mtif.shape
         if len(tif_shape) < 3 or tif_shape[2] < 2:
             return None
         total_count = mtif.shape[0] if use_voxels == False else mtif.shape[1] * mtif.shape[2]
-        return selfsimilarity(mtif, False, q_size, total_count, use_voxels, do_show)
+        return selfsimilarity(mtif, False, q_size, total_count, use_voxels, do_show, channel, mfunc)
 
 
 

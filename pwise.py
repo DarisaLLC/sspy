@@ -50,11 +50,11 @@ def getPairWiseArray(dims):
     return data
 
 
-def setPairWiseArrayPair(data, row, col, p):
+def setPairWiseArrayPair(data, row, col, p, q):
     """Set both P(i,j) and P(j,i) to p """
     assert (p >= 0.0 and p <= 1.0)
     data[row, col] = p
-    data[col, row] = p
+    data[col, row] = p if q is None else q
 
 
 def getSelfSimilarity(data):

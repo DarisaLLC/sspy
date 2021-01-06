@@ -37,6 +37,7 @@ def main():
     parser = argparse.ArgumentParser(description='SelfSimilarator')
     parser.add_argument('--content', '-i', required=True,
                         help='Directory of sequentially numbered image files or TIF multipage file')
+    parser.add_argument('--match', '-m', type=int, default=0, required=False, help='0 squared_ncv, 1 variation_of_information')
     parser.add_argument('--outpath', '-o', required=False, help='Path of output dir')
     parser.add_argument('--duration', '-d', type=int,required=True, help='Moving Temporal Window Size or -1 For All')
     parser.add_argument('--show', '-s', type=bool)
@@ -44,22 +45,25 @@ def main():
     parser.add_argument('--prefix', '-p', required=False,help='Image File Prefix, i.e. prefix0001.png')
     parser.add_argument('--type', '-t', required=True,help='Image File Extension')
     parser.add_argument('--levelset', '-l', type=int, default=0, required=False,help='Perform level setting with 1 / l fractions ')
-    parser.add_argument('--voxels', '-v', type=int, default=0, required=False,help='Use voxels as sequence data ')
+    parser.add_argument('--voxels', '-v', type=int, default=0, required=False, help='Use voxels as sequence data ')
+    parser.add_argument('--channel', '-c', type=int, default=-1, required=False, help='Channel to use if multichannel default converts to gray ')
 
     args = parser.parse_args()
     content_path = None
     output_path = None
-    multi_image_tif = False
+    is_dir_of_files = True
+    # if we have directory of images
     if Path(args.content).exists() and Path(args.content).is_dir():
         content_path = args.content
+    # Single file containing a multi-page tif
     elif Path(args.content).exists() and Path(args.content).is_file():
-        is_tif = Path(args.content).suffix == ('.' + args.type)
+        is_tif = Path(args.content).suffix == ('.tif')
         if is_tif:
             with tf.TiffFile(args.content) as tif:
                 data = tif.asarray()
                 if len(data.shape) > 2:
                     content_path = args.content
-                    multi_image_tif = True
+                    is_dir_of_files = False
 
     if (content_path is None):
         str_format = " Error: Content Path %s is not valid "
@@ -74,8 +78,15 @@ def main():
     q_size = args.duration
     use_voxel = args.voxels
 
-#def compute_selfsimilarity(content_path, q_size=-1, content_prefix='image', wild_dot_format='*.jpg', use_voxels =False,  do_show=False):
-    results = compute_selfsimilarity(content_path, q_size, args.prefix,content_glob, use_voxel, args.show)
+    if use_voxel and is_dir_of_files:
+        print('Voxel Processing on input of directory of images is not supported at this time ')
+        sys.exit(1)
+
+    # compute_selfsimilarity(content_path, match_fn_index, q_size=-1, content_prefix='image', wild_dot_format='*.jpg',
+    #                            use_voxels =False,  do_show=False, channel = -1):
+    results = compute_selfsimilarity(content_path, args.match, q_size,
+                                     args.prefix,content_glob, use_voxel, args.show, args.channel)
+
     if results is None:
         print('Input Error: Check ')
         sys.exit(1)
