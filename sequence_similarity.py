@@ -208,6 +208,8 @@ def selfsimilarity(inputs, is_dir_of_files , q_size, total_count, use_voxels, do
         print(ishape)
         ssm = sotime.reshape(ishape[1], ishape[2])
     plotAndShow(ssm, sotime, do_show)
+    if type(inputs) is list:
+        return (ssm, sotime, inputs)
     return (ssm,sotime)
 
 

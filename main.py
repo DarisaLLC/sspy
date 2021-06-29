@@ -22,6 +22,7 @@ def writeout(content, q_size, output_path, results, signal):
     ss_name = filename + '_' + q_size_text + '_' + 'entropy' + '.csv'
     ssm_name = filename + '_' + q_size_text + '_' + 'map' + '.csv'
     levelset_name = filename + '_' + q_size_text + '_' + 'levelset' + '.csv'
+    file_entropy_name = filename + '_' + q_size_text + '_' + 'filelist' + '.csv'
     ss_name = os.path.join(output_path, ss_name)
     ssm_name = os.path.join(output_path, ssm_name)
     levelset_name = os.path.join(output_path, levelset_name)
@@ -31,6 +32,20 @@ def writeout(content, q_size, output_path, results, signal):
         np.savetxt(ssm_name, ssm_np_array, fmt='%-1.10f', delimiter=',')
         if len(signal) == len(results[1]):
             np.savetxt(levelset_name, signal, fmt='%-1.10f', delimiter=',')
+
+        if len(results) == 3: # was a dir of files, produce an array with index,filename,entropy
+            print(f'{len(results[2])} files {len(results[1])} entropies ')
+            if len(results[2]) == len(results[1]):
+                file_entropy_name = os.path.join(output_path, file_entropy_name)
+                header = 'Index,entropy,filename\n'
+                csvF = open(file_entropy_name,'w')
+                csvF.write(header)
+                for ii in range(len(results[2])):
+                    fn = Path(results[2][ii]).name
+                    line = f'{ii},{results[1][ii]},{fn}\n'
+                    csvF.write(line)
+                csvF.close()
+
 
 
 def main():
